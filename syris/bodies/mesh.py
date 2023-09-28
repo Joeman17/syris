@@ -309,6 +309,76 @@ class Mesh(MovableBody):
                 ev.wait()
 
         return out
+    
+    def _compute_beam_intersections(self, shape, pixel_size, offset=None, t=None, queue=None, block=False, epsilon=1e-3, max_intersections=200):
+        def get_crop(index, fov):
+            minimum = max(self.extrema[index][0], fov[index][0])
+            maximum = min(self.extrema[index][1], fov[index][1])
+
+            return minimum - offset[::-1][index], maximum - offset[::-1][index]
+
+        def get_px_value(value, round_func, ps):
+            return int(round_func(get_magnitude(value / ps)))
+        
+        # Move to the desired location, apply the T matrix and resort the triangles
+        self.transform()
+        self.sort()
+
+        psm = pixel_size.simplified.magnitude
+        fov = offset + shape * pixel_size
+        fov = (
+            np.concatenate((offset.simplified.magnitude[::-1], fov.simplified.magnitude[::-1]))
+            .reshape(2, 2)
+            .transpose()
+            * q.m
+        )
+
+        intersections = cl_array.Array(queue, shape + (max_intersections,), dtype=cfg.PRECISION.np_float)
+        intersections.fill(np.nan) 
+
+        if (
+            self.extrema[0][0] < fov[0][1]
+            and self.extrema[0][1] > fov[0][0]
+            and self.extrema[1][0] < fov[1][1]
+            and self.extrema[1][1] > fov[1][0]
+        ):
+            # Object inside FOV
+            x_min, x_max = get_crop(0, fov)
+            y_min, y_max = get_crop(1, fov)
+            x_min_px = get_px_value(x_min, np.floor, pixel_size[1])
+            x_max_px = get_px_value(x_max, np.ceil, pixel_size[1])
+            y_min_px = get_px_value(y_min, np.floor, pixel_size[0])
+            y_max_px = get_px_value(y_max, np.ceil, pixel_size[0])
+            width = min(x_max_px - x_min_px, shape[1])
+            height = min(y_max_px - y_min_px, shape[0])
+            compute_offset = cltypes.make_int2(x_min_px, y_min_px)
+            v_1, v_2, v_3 = self._make_inputs(queue, pixel_size)
+            max_dx = self.max_triangle_x_diff.simplified.magnitude / psm[1]
+            # Use the same pixel size as for the x-axis, which will work for objects "not too far"
+            # from the imaging plane
+            min_z = self.extrema[2][0].simplified.magnitude / psm[1]
+            offset = gutil.make_vfloat2(*(offset / pixel_size).simplified.magnitude[::-1])
+
+            ev = cfg.OPENCL.programs["mesh"].compute_intersections_kernel(
+                queue,
+                (width, height),
+                None,
+                v_1.data,
+                v_2.data,
+                v_3.data,
+                intersections.data,
+                np.int32(self.num_triangles),
+                np.int32(shape[1]),
+                compute_offset,
+                offset,
+                cfg.PRECISION.np_float(max_dx),
+                cfg.PRECISION.np_float(min_z),
+                cfg.PRECISION.np_float(epsilon)
+            )
+            if block:
+                ev.wait()
+                
+        return gutil.get_host(intersections)
 
     def compute_slices(self, shape, pixel_size, queue=None, out=None, offset=None):
         """Compute slices with *shape* as (z, y, x), *pixel_size*. Use *queue* and *out* for
