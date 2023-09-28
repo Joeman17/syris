@@ -418,14 +418,18 @@ class Mesh(MovableBody):
 
 def _extract_object(txt):
     """Extract an object from string *txt*."""
-    face_start = txt.index("s ")
-    if "v" not in txt[face_start:]:
+    face_start = txt.index("f ")
+    if "v " not in txt[face_start:]:
         obj_end = None
     else:
         obj_end = face_start + txt[face_start:].index("v")
     subtxt = txt[:obj_end]
-
-    pattern = r"{} (?P<x>.*) (?P<y>.*) (?P<z>.*)"
+    # possible structures for faces according to https://en.wikipedia.org/wiki/Wavefront_.obj_file
+    # f v1 v2 v3
+    # f v1/vt1 v2/vt2 v3/vt3
+    # f v1//vn1 v2//vn2 v3//vn3
+    # f v1/vt1/vn1 v2/vt2/vn2 v3/vt3/vn3
+    pattern = r"{} (?P<x>[-.0-9]+)[/0-9]* (?P<y>[-.0-9]+)[/0-9]* (?P<z>[-.0-9]+)[/0-9]*"
     v_pattern = re.compile(pattern.format("v"))
     f_pattern = re.compile(pattern.format("f"))
     vertices = np.array(re.findall(v_pattern, subtxt)).astype(np.float32)
@@ -434,7 +438,6 @@ def _extract_object(txt):
     remainder = txt[obj_end:] if obj_end else None
 
     return remainder, vertices, faces
-
 
 def read_blender_obj(filename, objects=None):
     """Read blender wavefront *filename*, extract only *objects* which are object indices."""
