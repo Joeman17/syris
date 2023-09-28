@@ -43,7 +43,21 @@ class Body(OpticalElement):
     def _project(self, shape, pixel_size, offset, t=None, queue=None, out=None, block=False):
         """Projection function implementation. *shape* and *pixel_size* are 2D."""
         raise NotImplementedError
+    
+    def compute_beam_intersections(self, shape, pixel_size, offset=None, t=None, queue=None, block=False, epsilon=1e-3):
+        shape = make_tuple(shape, num_dims=2)
+        pixel_size = make_tuple(pixel_size, num_dims=2)
+        if offset is None:
+            offset = (0, 0) * q.m
+        if queue is None:
+            queue = cfg.OPENCL.queue
 
+        return self._compute_beam_intersections(shape, pixel_size, offset, t=t, queue=queue, block=block, epsilon=1e-3)
+
+    def _compute_beam_intersections(self, shape, pixel_size, offset=None, t=None, queue=None, block=False, epsilon=1e-3):
+        """Projection function implementation. *shape* and *pixel_size* are 2D."""
+        raise NotImplementedError
+    
     def _transfer(
         self,
         shape,
