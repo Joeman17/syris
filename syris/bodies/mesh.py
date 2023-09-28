@@ -386,18 +386,25 @@ class Mesh(MovableBody):
         """
         if queue is None:
             queue = cfg.OPENCL.queue
-        if out is None:
-            out = cl_array.zeros(queue, shape, dtype=np.uint8)
-
+        self.transform()
+        self.sort()
         pixel_size = make_tuple(pixel_size, num_dims=2)
         v_1, v_2, v_3 = self._make_inputs(queue, pixel_size)
         psm = pixel_size.simplified.magnitude
         max_dx = self.max_triangle_x_diff.simplified.magnitude / psm[1]
+        depth = shape[2]
         if offset is None:
             offset = gutil.make_vfloat3(0, 0, 0)
         else:
             offset = offset.simplified.magnitude
-            offset = gutil.make_vfloat3(offset[0] / psm[1], offset[1] / psm[0], offset[2] / psm[1])
+            if self.extrema[2][0] < offset[2] / psm[0]:
+                depth = depth - self.extrema[2][0].simplified.item() / psm[0] + 1
+                offset = gutil.make_vfloat3(offset[0] / psm[1], offset[1] / psm[0], self.extrema[2][0].simplified.item() / psm[0] - 1)
+            else:
+                offset = gutil.make_vfloat3(offset[0] / psm[1], offset[1] / psm[0], offset[2] / psm[1])
+            
+        if out is None:
+            out = cl_array.zeros(queue, tuple((shape[0], np.int32(depth), shape[2])), dtype=np.uint8)
 
         cfg.OPENCL.programs["mesh"].compute_slices(
             queue,
@@ -407,14 +414,16 @@ class Mesh(MovableBody):
             v_2.data,
             v_3.data,
             out.data,
-            np.int32(shape[1]),
+            np.int32(depth),
             np.int32(self.num_triangles),
             offset,
             cfg.PRECISION.np_float(max_dx),
         )
+        out = out.get()
+        if depth != shape[1]:
+            out = out[:, out.shape[1] - shape[1]:]
 
         return out
-
 
 def _extract_object(txt):
     """Extract an object from string *txt*."""
