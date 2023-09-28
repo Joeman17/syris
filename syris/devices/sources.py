@@ -209,6 +209,8 @@ class FixedSpectrumSource(XRaySource):
             .rescale(1 / q.s)
             .magnitude.astype(cfg.PRECISION.np_float)
         )
+        if len(flux.shape)<=1:
+            flux = np.ones(shape) * flux
         cl_image = gutil.get_image(flux, queue=queue)
 
         sampler = cl.Sampler(cfg.OPENCL.ctx, False, cl.addressing_mode.CLAMP, cl.filter_mode.LINEAR)
