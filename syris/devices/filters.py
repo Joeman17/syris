@@ -11,6 +11,9 @@ from syris.physics import energy_to_wavelength
 from syris.util import get_gauss
 
 
+import logging
+LOG = logging.getLogger(__name__)
+
 class Filter(OpticalElement):
 
     """Beam frequency filter."""
@@ -167,7 +170,13 @@ class Scintillator(MaterialFilter):
 
     def get_luminescence(self, wavelength):
         """Get luminescence at *wavelength* [1 / nm]."""
-        return interp.splev(wavelength.rescale(q.nm).magnitude, self._lum_tck) / q.nm
+        covered_by_data = np.logical_and(wavelength.rescale(q.nm).magnitude > np.min(self._lum_tck[0]), wavelength.rescale(q.nm).magnitude < np.max(self._lum_tck[0]))
+        if not np.all(covered_by_data):
+            msg = 'Some of the wavelengths are outside of the spectrum where luminescence data is available for. Luminescence for data points outside of data range is assumed to be 0. Please check on the given Luminescence spectrum.'
+            LOG.warning(msg)  
+        luminescence = np.zeros(wavelength.shape)
+        luminescence[covered_by_data] = interp.splev(wavelength[covered_by_data].rescale(q.nm).magnitude, self._lum_tck) 
+        return luminescence / q.nm
 
     def get_conversion_factor(self, energy):
         """Get the conversion factor to convert X-ray photons to visible light photons
